@@ -1,4 +1,43 @@
 ---
 # tasks file for clichouse-role
 
+- block:
+  #Получаем дистрибутивы clickhouse из репозитория. Переменные (имена и версии пакетов, платформа) описываются в
+  #переменных для Clickhouse (group_vars/clickhouse/vars.yml).
+  - name: Get clickhouse distrib (rpm noarch package)
+    ansible.builtin.get_url:
+      url: "https://packages.clickhouse.com/rpm/stable/{{ item }}-{{ clickhouse_version }}.{{ platform }}.rpm"
+      #Указываем расположение пакета и даем названия
+      dest: "./{{ item }}-{{ clickhouse_version }}.rpm"
+    with_items: "{{ clickhouse_packages }}"
+  #Если в верхней части блока были ошибки, подбираем подходящие пакеты
+  rescue:
+    - name: Get clickhouse distrib (rpm package)
+      ansible.builtin.get_url:
+        url: https://packages.clickhouse.com/rpm/stable/clickhouse-common-static-{{ clickhouse_version }}.{{ platform }}.rpm
+        dest: ./clickhouse-common-static-{{ clickhouse_version }}.rpm
+  # Блок Always выполняется всегда.
+  always:
+    #Производим установку скачанных пакетов
+    - name: Install clickhouse packages
+      become: true
+      ansible.builtin.yum:
+        name:
+          - clickhouse-common-static-{{ clickhouse_version }}.rpm
+          - clickhouse-client-{{ clickhouse_version }}.rpm
+          - clickhouse-server-{{ clickhouse_version }}.rpm
+      #Запускаем handler. Производим рестарт сервиса.
+      notify: Start clickhouse service
+    #Информируем о выполнении handler
+    - name: Flush handlers
+      ansible.builtin.meta: flush_handlers
+    #Создаем БД clickhouse
+      notify: Start clickhouse service
+    - name: Flush handlers
+      ansible.builtin.meta: flush_handlers
+    - name: Create database
+      ansible.builtin.command: "clickhouse-client -q 'create database logs;'"
+      register: create_db
+      failed_when: create_db.rc != 0 and create_db.rc !=82
+      changed_when: create_db.rc == 0
 
